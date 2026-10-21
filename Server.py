@@ -2,7 +2,7 @@ import os
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-API_KEY = os.environ["REPAIRSHOPR_API_KEY"]
+API_KEY = os.environ["REPAIRSHOPR_API_KEY"].strip()
 SECRET = os.environ["MCP_SECRET_PATH"]
 BASE = "https://techmediagroup.repairshopr.com/api/v1"
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
