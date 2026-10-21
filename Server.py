@@ -73,6 +73,3 @@ def create_ticket(customer_id: int, subject: str, problem: str,
         "problem_type": "Other", "description": problem,
         "comments_attributes": comments,
     })
-
-if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
