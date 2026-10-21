@@ -26,14 +26,27 @@ def search_customers(query: str) -> dict:
     return get("/customers", {"query": query})
 
 @mcp.tool()
-def search_tickets(query: str) -> dict:
-    """Search tickets by number, customer name, or keyword."""
-    return get("/tickets", {"query": query})
-
-@mcp.tool()
 def search_tickets(query: str, page: int = 1) -> dict:
     """Search tickets by number, customer name, or keyword. 50 per page; use page for more."""
     return get("/tickets", {"query": query, "page": page})
+
+@mcp.tool()
+def list_technicians() -> dict:
+    """List all technicians (RepairShopr users) with their names and user IDs."""
+    return get("/users")
+
+@mcp.tool()
+def technician_tickets(user_id: int, status: str = "", created_after: str = "",
+                       page: int = 1) -> dict:
+    """Tickets assigned to one technician. Get user_id from list_technicians.
+    status examples: 'Not Closed', 'New', 'In Progress', 'Waiting for Parts', 'Resolved'.
+    created_after format: YYYY-MM-DD. 50 per page; use page for more."""
+    params = {"user_id": user_id, "page": page}
+    if status:
+        params["status"] = status
+    if created_after:
+        params["created_after"] = created_after
+    return get("/tickets", params)
 
 @mcp.tool()
 def create_customer(firstname: str, lastname: str, phone: str,
