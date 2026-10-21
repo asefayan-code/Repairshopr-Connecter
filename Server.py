@@ -4,7 +4,7 @@ from mcp.server.fastmcp import FastMCP
 
 API_KEY = os.environ["REPAIRSHOPR_API_KEY"]
 SECRET = os.environ["MCP_SECRET_PATH"]
-BASE = "https://tekmediagroup.repairshopr.com/api/v1"
+BASE = "https://techmediagroup.repairshopr.com/api/v1"
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
 
 mcp = FastMCP("repairshopr", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
