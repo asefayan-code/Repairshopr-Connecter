@@ -73,3 +73,71 @@ def create_ticket(customer_id: int, subject: str, problem: str,
         "problem_type": "Other", "description": problem,
         "comments_attributes": comments,
     })
+@mcp.tool()
+def list_invoices(since_date: str = "", unpaid_only: bool = False, page: int = 1) -> dict:
+"""List invoices. since_date format YYYY-MM-DD. Shows totals, paid status, ticket link."""
+params = {"page": page}
+if since_date:
+params["since_updated_at"] = since_date
+if unpaid_only:
+params["unpaid"] = "true"
+return get("/invoices", params)
+
+
+@mcp.tool()
+def get_invoice(invoice_id: int) -> dict:
+"""Full details of one invoice, including line items."""
+return get(f"/invoices/{invoice_id}")
+
+
+@mcp.tool()
+def list_payments(page: int = 1) -> dict:
+"""List customer payments received."""
+return get("/payments", {"page": page})
+
+
+@mcp.tool()
+def list_estimates(page: int = 1) -> dict:
+"""List estimates with amounts and status."""
+return get("/estimates", {"page": page})
+
+
+@mcp.tool()
+def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dict:
+"""Total invoiced money for one technician's tickets in a date range (YYYY-MM-DD)."""
+ticket_ids, page = set(), 1
+while True:
+data = get("/tickets", {"user_id": user_id, "created_after": start_date, "page": page})
+for t in data.get("tickets", []):
+ticket_ids.add(t["id"])
+if page >= data.get("meta", {}).get("total_pages", 1):
+break
+page += 1
+
+invoices, page = [], 1
+while True:
+data = get("/invoices", {"since_updated_at": start_date, "page": page})
+for inv in data.get("invoices", []):
+d = (inv.get("date") or "")[:10]
+if inv.get("ticket_id") in ticket_ids and (not end_date or d <= end_date):
+invoices.append({
+"number": inv.get("number"),
+"customer": inv.get("customer_business_then_name"),
+"date": d,
+"total": float(inv.get("total") or 0),
+"paid": inv.get("is_paid"),
+})
+if page >= data.get("meta", {}).get("total_pages", 1):
+break
+page += 1
+
+return {
+"invoice_count": len(invoices),
+"total_invoiced": round(sum(i["total"] for i in invoices), 2),
+"invoices": invoices,
+}
+
+
+if __name__ == "__main__":
+mcp.run(transport="streamable-http")
+```
