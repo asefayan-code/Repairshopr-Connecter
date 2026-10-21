@@ -31,9 +31,9 @@ def search_tickets(query: str) -> dict:
     return get("/tickets", {"query": query})
 
 @mcp.tool()
-def get_ticket(ticket_id: int) -> dict:
-    """Get full details of one ticket by its ID."""
-    return get(f"/tickets/{ticket_id}")
+def search_tickets(query: str, page: int = 1) -> dict:
+    """Search tickets by number, customer name, or keyword. 50 per page; use page for more."""
+    return get("/tickets", {"query": query, "page": page})
 
 @mcp.tool()
 def create_customer(firstname: str, lastname: str, phone: str,
