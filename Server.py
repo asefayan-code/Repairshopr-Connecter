@@ -20,6 +20,18 @@ def post(path, data):
     r.raise_for_status()
     return r.json()
 
+def put(path, data):
+    r = httpx.put(f"{BASE}{path}", headers=HEADERS, json=data, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+def ticket_id_from_number(number):
+    data = get("/tickets", {"number": number})
+    for t in data.get("tickets", []):
+        if str(t.get("number")) == str(number):
+            return t["id"]
+    raise ValueError(f"Ticket {number} not found")
+
 @mcp.tool()
 def search_customers(query: str) -> dict:
     """Search customers by name, phone, or email."""
@@ -73,6 +85,26 @@ def create_ticket(customer_id: int, subject: str, problem: str,
         "problem_type": "Other", "description": problem,
         "comments_attributes": comments,
     })
+
+@mcp.tool()
+def add_ticket_note(ticket_number: str, note: str, private: bool = True,
+                    subject: str = "Update") -> dict:
+    """Add a note to a ticket by its work order number (e.g. 59589).
+    private=True (default) hides it from the customer and sends no email.
+    private=False makes it a public note the customer can see."""
+    tid = ticket_id_from_number(ticket_number)
+    return post(f"/tickets/{tid}/comment", {
+        "subject": subject, "body": note,
+        "hidden": private, "do_not_email": private,
+    })
+
+@mcp.tool()
+def update_ticket_status(ticket_number: str, status: str) -> dict:
+    """Change a ticket's status by work order number. Use the exact status
+    names from RepairShopr, e.g. 'New', 'In Progress', 'Waiting for Parts',
+    'Customer Reply', 'Resolved'."""
+    tid = ticket_id_from_number(ticket_number)
+    return put(f"/tickets/{tid}", {"status": status})
 
 @mcp.tool()
 def list_invoices(since_date: str = "", unpaid_only: bool = False, page: int = 1) -> dict:
@@ -136,4 +168,3 @@ def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dic
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
-      
