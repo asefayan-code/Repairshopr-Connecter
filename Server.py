@@ -97,7 +97,20 @@ def add_ticket_note(ticket_number: str, note: str, private: bool = True,
         "subject": subject, "body": note,
         "hidden": private, "do_not_email": private,
     })
-
+@mcp.tool()
+def delete_ticket_note(ticket_number: str, comment_id: int) -> dict:
+"""Delete a note (comment) from a ticket by work order number and comment id."""
+import os, requests
+base = "https://techmediagroup.repairshopr.com/api/v1"
+headers = {"Authorization": f"Bearer {os.environ['REPAIRSHOPR_API_KEY']}"}
+r = requests.get(f"{base}/tickets", headers=headers, params={"number": ticket_number})
+r.raise_for_status()
+tickets = r.json().get("tickets", [])
+if not tickets:
+return {"error": f"Ticket {ticket_number} not found"}
+ticket_id = tickets[0]["id"]
+d = requests.delete(f"{base}/tickets/{ticket_id}/comments/{comment_id}", headers=headers)
+return {"status": d.status_code, "body": d.text}
 @mcp.tool()
 def update_ticket_status(ticket_number: str, status: str) -> dict:
     """Change a ticket's status by work order number. Use the exact status
