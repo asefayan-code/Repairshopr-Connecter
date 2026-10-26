@@ -227,7 +227,7 @@ async def vapi_assistant_request(request: Request):
     number = ((msg.get("call") or {}).get("customer") or {}).get("number", "")
     c = find_customer_by_phone(number) if number else None
     if c:
-        name = c.get("business_name") or f"{c.get('firstname', '')} {c.get('lastname', '')}".strip()
+       name = c.get("business_name") or (c.get("firstname") or "").strip()
         first = f"Hello, {name}, {GREETING}"
         values = {"customer_name": name, "customer_id": str(c.get("id")), "customer_lastname": c.get("lastname") or ""}
     else:
