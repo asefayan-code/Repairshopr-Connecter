@@ -200,7 +200,7 @@ def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dic
 
 # ---------- Vapi caller greeting (looks up caller before the AI answers) ----------
 
-GREETING = "thank you for calling Tek Media Group, this call may be recorded for quality purposes."
+GREETING = "thank you for calling Tek Media Group, this call may be recorded for quality purposes. To confirm your account, can you please tell me your last name?."
 
 
 def find_customer_by_phone(number):
