@@ -66,3 +66,182 @@ def technician_tickets(user_id: int, status: str = "", created_after: str = "", 
     if status:
         params["status"] = status
     if created_after:
+        params["created_after"] = created_after
+    return get("/tickets", params)
+
+
+@mcp.tool()
+def create_customer(firstname: str, lastname: str, phone: str, address: str, city: str,
+                    state: str, zip: str, referred_by: str = "") -> dict:
+    """Create a customer. Address is required by RepairShopr."""
+    return post("/customers", {
+        "firstname": firstname,
+        "lastname": lastname,
+        "phone": phone,
+        "address": address,
+        "city": city,
+        "state": state,
+        "zip": zip,
+        "referred_by": referred_by,
+    })
+
+
+@mcp.tool()
+def create_ticket(customer_id: int, subject: str, problem: str,
+                  private_note: str = "", public_note: str = "") -> dict:
+    """Create a repair ticket. Subject = make/model/serial, problem = the issue."""
+    comments = []
+    if public_note:
+        comments.append({"subject": "Intake", "body": public_note, "hidden": False})
+    if private_note:
+        comments.append({"subject": "Intake (private)", "body": private_note, "hidden": True})
+    return post("/tickets", {
+        "customer_id": customer_id,
+        "subject": subject,
+        "problem_type": "Other",
+        "description": problem,
+        "comments_attributes": comments,
+    })
+
+
+@mcp.tool()
+def add_ticket_note(ticket_number: str, note: str, private: bool = True, subject: str = "Update") -> dict:
+    """Add a note to a ticket by its work order number (e.g. 59589).
+    private=True (default) hides it from the customer and sends no email.
+    private=False makes it a public note the customer can see."""
+    tid = ticket_id_from_number(ticket_number)
+    return post(f"/tickets/{tid}/comment", {
+        "subject": subject,
+        "body": note,
+        "hidden": private,
+        "do_not_email": private,
+    })
+
+
+@mcp.tool()
+def delete_ticket_note(ticket_number: str, comment_id: int) -> dict:
+    """Delete a note from a ticket by work order number and comment id.
+    Only use when Andy explicitly says to delete a specific note."""
+    tid = ticket_id_from_number(ticket_number)
+    r = httpx.delete(f"{BASE}/tickets/{tid}/comments/{comment_id}", headers=HEADERS, timeout=30)
+    return {"status": r.status_code, "body": r.text}
+
+
+@mcp.tool()
+def update_ticket_status(ticket_number: str, status: str) -> dict:
+    """Change a ticket's status by work order number. Use the exact status names from
+    RepairShopr, e.g. 'New', 'In Progress', 'Waiting for Parts', 'Customer Reply', 'Resolved'."""
+    tid = ticket_id_from_number(ticket_number)
+    return put(f"/tickets/{tid}", {"status": status})
+
+
+@mcp.tool()
+def list_invoices(since_date: str = "", unpaid_only: bool = False, page: int = 1) -> dict:
+    """List invoices. since_date format YYYY-MM-DD. Shows totals, paid status, ticket link."""
+    params = {"page": page}
+    if since_date:
+        params["since_updated_at"] = since_date
+    if unpaid_only:
+        params["unpaid"] = "true"
+    return get("/invoices", params)
+
+
+@mcp.tool()
+def get_invoice(invoice_id: int) -> dict:
+    """Full details of one invoice, including line items."""
+    return get(f"/invoices/{invoice_id}")
+
+
+@mcp.tool()
+def list_payments(page: int = 1) -> dict:
+    """List customer payments received."""
+    return get("/payments", {"page": page})
+
+
+@mcp.tool()
+def list_estimates(page: int = 1) -> dict:
+    """List estimates with amounts and status."""
+    return get("/estimates", {"page": page})
+
+
+@mcp.tool()
+def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dict:
+    """Total invoiced money for one technician's tickets in a date range (YYYY-MM-DD)."""
+    ticket_ids, page = set(), 1
+    while True:
+        data = get("/tickets", {"user_id": user_id, "created_after": start_date, "page": page})
+        for t in data.get("tickets", []):
+            ticket_ids.add(t["id"])
+        if page >= data.get("meta", {}).get("total_pages", 1):
+            break
+        page += 1
+    invoices, page = [], 1
+    while True:
+        data = get("/invoices", {"since_updated_at": start_date, "page": page})
+        for inv in data.get("invoices", []):
+            d = (inv.get("date") or "")[:10]
+            if inv.get("ticket_id") in ticket_ids and (not end_date or d <= end_date):
+                invoices.append({
+                    "number": inv.get("number"),
+                    "customer": inv.get("customer_business_then_name"),
+                    "date": d,
+                    "total": float(inv.get("total") or 0),
+                    "paid": inv.get("is_paid"),
+                })
+        if page >= data.get("meta", {}).get("total_pages", 1):
+            break
+        page += 1
+    return {
+        "invoice_count": len(invoices),
+        "total_invoiced": round(sum(i["total"] for i in invoices), 2),
+        "invoices": invoices,
+    }
+
+
+# ---------- Vapi caller greeting (looks up caller before the AI answers) ----------
+
+GREETING = "thank you for calling Tek Media Group, this call may be recorded for quality purposes."
+
+
+def find_customer_by_phone(number):
+    digits = "".join(ch for ch in number if ch.isdigit())[-10:]
+    if len(digits) != 10:
+        return None
+    tries = (digits, f"{digits[:3]}-{digits[3:6]}-{digits[6:]}", f"({digits[:3]}) {digits[3:6]}-{digits[6:]}")
+    for q in tries:
+        try:
+            data = get("/customers", {"query": q})
+        except Exception:
+            continue
+        for c in data.get("customers", []):
+            for p in (c.get("phone") or "", c.get("mobile") or ""):
+                if "".join(ch for ch in p if ch.isdigit())[-10:] == digits:
+                    return c
+    return None
+
+
+@mcp.custom_route(f"/{SECRET}/vapi", methods=["POST"])
+async def vapi_assistant_request(request: Request):
+    body = await request.json()
+    msg = body.get("message", {})
+    number = ((msg.get("call") or {}).get("customer") or {}).get("number", "")
+    c = find_customer_by_phone(number) if number else None
+    if c:
+        name = c.get("business_name") or (c.get("firstname") or "").strip()
+        first = f"Hello, {name}, {GREETING}"
+        values = {"customer_name": name, "customer_id": str(c.get("id")), "customer_lastname": c.get("lastname") or ""}
+    else:
+        first = "Thank you for calling Tek Media Group, this call may be recorded for quality purposes."
+        values = {"customer_name": "", "customer_id": "", "customer_lastname": ""}
+    return JSONResponse({
+        "assistantId": os.environ["VAPI_ASSISTANT_ID"],
+        "assistantOverrides": {
+            "firstMessage": first,
+            "firstMessageMode": "assistant-speaks-first",
+            "variableValues": values,
+        },
+    })
+
+
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")
