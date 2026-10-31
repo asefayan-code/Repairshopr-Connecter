@@ -43,7 +43,46 @@ def ticket_id_from_number(number):
 def search_customers(query: str) -> dict:
     """Search customers by name, phone, or email."""
     return get("/customers", {"query": query})
+@mcp.tool()
+def zero_out_old_inventory(months: int = 6, dry_run: bool = True, max_items: int = 500) -> dict:
+"""Set quantity to 0 and prefix 'DELETED' on products not updated in `months` months.
+Run with dry_run=True first to see the count. max_items limits each run."""
+base = "https://techmediagroup.repairshopr.com/api/v1"
+key = os.environ["REPAIRSHOPR_API_KEY"]
+headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+cutoff = datetime.now(timezone.utc) - timedelta(days=30 * months)
 
+def call(method, path, body=None):
+data = json.dumps(body).encode() if body else None
+req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
+with urllib.request.urlopen(req, timeout=30) as r:
+return json.loads(r.read())
+
+old, page = [], 1
+while True:
+res = call("GET", f"/products?page={page}")
+for p in res.get("products", []):
+name = (p.get("name") or "").strip()
+if name.startswith("DELETED"):
+continue
+updated = datetime.fromisoformat(p["since_updated_at"])
+if updated < cutoff:
+old.append((p["id"], name))
+if page >= res["meta"]["total_pages"]:
+break
+page += 1
+
+if dry_run:
+return {"would_change": len(old), "sample": [n for _, n in old[:10]]}
+
+done, failed = 0, []
+for pid, name in old[:max_items]:
+try:
+call("PUT", f"/products/{pid}", {"quantity": 0, "name": f"DELETED {name}"})
+done += 1
+except Exception as e:
+failed.append({"id": pid, "error": str(e)})
+...
 
 @mcp.tool()
 def search_tickets(query: str, page: int = 1) -> dict:
