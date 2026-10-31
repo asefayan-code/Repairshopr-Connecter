@@ -250,6 +250,20 @@ def update_product(product_id: int, name: str = None, description: str = None,
     return put(f"/products/{product_id}", data)
 
 
+@mcp.tool()
+def delete_product(product_id: int) -> dict:
+    """Delete an inventory item. Get product_id from search_products.
+    Only use when Andy explicitly says to delete a specific item.
+    If RepairShopr won't allow a hard delete, the item is disabled instead."""
+    r = httpx.delete(f"{BASE}/products/{product_id}", headers=HEADERS, timeout=30)
+    if r.status_code < 300:
+        return {"result": "deleted", "status": r.status_code}
+    d = httpx.put(f"{BASE}/products/{product_id}", headers=HEADERS,
+                  json={"disabled": True}, timeout=30)
+    return {"result": "disabled" if d.status_code < 300 else "failed",
+            "delete_status": r.status_code, "disable_status": d.status_code, "body": d.text}
+
+
 # ---------- Vapi caller greeting (looks up caller before the AI answers) ----------
 
 GREETING = "thank you for calling Tek Media Group, this call may be recorded for quality purposes. To confirm your account, can you please tell me your last name?."
