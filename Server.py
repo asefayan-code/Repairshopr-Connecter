@@ -227,6 +227,29 @@ def create_product(name: str, description: str = "", upc_code: str = "",
     })
 
 
+@mcp.tool()
+def update_product(product_id: int, name: str = None, description: str = None,
+                   upc_code: str = None, price_cost: float = None,
+                   price_retail: float = None, quantity: int = None,
+                   physical_location: str = None, notes: str = None) -> dict:
+    """Edit an inventory item. Get product_id from search_products.
+    Only the fields you pass are changed; everything else stays the same."""
+    fields = {
+        "name": name,
+        "description": description,
+        "upc_code": upc_code,
+        "price_cost": price_cost,
+        "price_retail": price_retail,
+        "quantity": quantity,
+        "physical_location": physical_location,
+        "notes": notes,
+    }
+    data = {k: v for k, v in fields.items() if v is not None}
+    if not data:
+        raise ValueError("Nothing to update")
+    return put(f"/products/{product_id}", data)
+
+
 # ---------- Vapi caller greeting (looks up caller before the AI answers) ----------
 
 GREETING = "thank you for calling Tek Media Group, this call may be recorded for quality purposes. To confirm your account, can you please tell me your last name?."
