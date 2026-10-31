@@ -1,4 +1,6 @@
 import os
+import time
+from datetime import date, timedelta
 import httpx
 from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
@@ -43,46 +45,7 @@ def ticket_id_from_number(number):
 def search_customers(query: str) -> dict:
     """Search customers by name, phone, or email."""
     return get("/customers", {"query": query})
-@mcp.tool()
-def zero_out_old_inventory(months: int = 6, dry_run: bool = True, max_items: int = 500) -> dict:
-"""Set quantity to 0 and prefix 'DELETED' on products not updated in `months` months.
-Run with dry_run=True first to see the count. max_items limits each run."""
-base = "https://techmediagroup.repairshopr.com/api/v1"
-key = os.environ["REPAIRSHOPR_API_KEY"]
-headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-cutoff = datetime.now(timezone.utc) - timedelta(days=30 * months)
 
-def call(method, path, body=None):
-data = json.dumps(body).encode() if body else None
-req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
-with urllib.request.urlopen(req, timeout=30) as r:
-return json.loads(r.read())
-
-old, page = [], 1
-while True:
-res = call("GET", f"/products?page={page}")
-for p in res.get("products", []):
-name = (p.get("name") or "").strip()
-if name.startswith("DELETED"):
-continue
-updated = datetime.fromisoformat(p["since_updated_at"])
-if updated < cutoff:
-old.append((p["id"], name))
-if page >= res["meta"]["total_pages"]:
-break
-page += 1
-
-if dry_run:
-return {"would_change": len(old), "sample": [n for _, n in old[:10]]}
-
-done, failed = 0, []
-for pid, name in old[:max_items]:
-try:
-call("PUT", f"/products/{pid}", {"quantity": 0, "name": f"DELETED {name}"})
-done += 1
-except Exception as e:
-failed.append({"id": pid, "error": str(e)})
-...
 
 @mcp.tool()
 def search_tickets(query: str, page: int = 1) -> dict:
@@ -301,6 +264,44 @@ def delete_product(product_id: int) -> dict:
                   json={"disabled": True}, timeout=30)
     return {"result": "disabled" if d.status_code < 300 else "failed",
             "delete_status": r.status_code, "disable_status": d.status_code, "body": d.text}
+
+
+@mcp.tool()
+def zero_out_old_inventory(months: int = 6, dry_run: bool = True, max_items: int = 200) -> dict:
+    """Bulk clean-up: set quantity to 0 and put 'DELETED' in front of the name for every
+    product not updated in `months` months. Run with dry_run=True first to see the count.
+    max_items caps how many are changed per run; run again until remaining is 0."""
+    cutoff = (date.today() - timedelta(days=30 * months)).isoformat()
+
+    old, page = [], 1
+    while True:
+        res = get("/products", {"page": page})
+        for p in res.get("products", []):
+            name = (p.get("name") or "").strip()
+            if name.startswith("DELETED"):
+                continue
+            updated = (p.get("since_updated_at") or "")[:10]
+            if updated and updated < cutoff:
+                old.append((p["id"], name))
+        if page >= res.get("meta", {}).get("total_pages", 1):
+            break
+        page += 1
+        time.sleep(0.35)  # stay under RepairShopr's rate limit
+
+    if dry_run:
+        return {"cutoff": cutoff, "would_change": len(old), "sample": [n for _, n in old[:10]]}
+
+    done, failed = 0, []
+    for pid, name in old[:max_items]:
+        try:
+            put(f"/products/{pid}", {"quantity": 0, "name": f"DELETED {name}"})
+            done += 1
+        except Exception as e:
+            failed.append({"id": pid, "error": str(e)})
+        time.sleep(0.35)
+
+    return {"changed": done, "failed": len(failed),
+            "remaining": max(0, len(old) - max_items), "errors": failed[:5]}
 
 
 # ---------- Vapi caller greeting (looks up caller before the AI answers) ----------
