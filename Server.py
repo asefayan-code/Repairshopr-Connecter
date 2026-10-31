@@ -198,6 +198,35 @@ def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dic
     }
 
 
+# ---------- Inventory (add items from a photo) ----------
+
+@mcp.tool()
+def search_products(query: str, page: int = 1) -> dict:
+    """Search inventory products by name, SKU, or UPC barcode.
+    Use before create_product to avoid duplicates."""
+    return get("/products", {"query": query, "page": page})
+
+
+@mcp.tool()
+def create_product(name: str, description: str = "", upc_code: str = "",
+                   price_cost: float = 0, price_retail: float = 0,
+                   quantity: int = 1, physical_location: str = "",
+                   notes: str = "") -> dict:
+    """Add an item to RepairShopr inventory. Usually filled in from a photo
+    of the item or its label: name = make/model, upc_code = barcode number."""
+    return post("/products", {
+        "name": name,
+        "description": description or name,
+        "upc_code": upc_code,
+        "price_cost": price_cost,
+        "price_retail": price_retail,
+        "maintain_stock": True,
+        "quantity": quantity,
+        "physical_location": physical_location,
+        "notes": notes,
+    })
+
+
 # ---------- Vapi caller greeting (looks up caller before the AI answers) ----------
 
 GREETING = "thank you for calling Tek Media Group, this call may be recorded for quality purposes. To confirm your account, can you please tell me your last name?."
