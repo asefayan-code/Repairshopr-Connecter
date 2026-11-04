@@ -1,6 +1,7 @@
-import os
+  import os
 import time
 from datetime import date, timedelta
+
 import httpx
 from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
@@ -61,9 +62,7 @@ def list_technicians() -> dict:
 
 @mcp.tool()
 def technician_tickets(user_id: int, status: str = "", created_after: str = "", page: int = 1) -> dict:
-    """Tickets assigned to one technician. Get user_id from list_technicians.
-    status examples: 'Not Closed', 'New', 'In Progress', 'Waiting for Parts', 'Resolved'.
-    created_after format: YYYY-MM-DD. 50 per page; use page for more."""
+    """Tickets assigned to one technician. Get user_id from list_technicians. status examples: 'Not Closed', 'New', 'In Progress', 'Waiting for Parts', 'Resolved'. created_after format: YYYY-MM-DD. 50 per page; use page for more."""
     params = {"user_id": user_id, "page": page}
     if status:
         params["status"] = status
@@ -73,8 +72,7 @@ def technician_tickets(user_id: int, status: str = "", created_after: str = "", 
 
 
 @mcp.tool()
-def create_customer(firstname: str, lastname: str, phone: str, address: str, city: str,
-                    state: str, zip: str, referred_by: str = "") -> dict:
+def create_customer(firstname: str, lastname: str, phone: str, address: str, city: str, state: str, zip: str, referred_by: str = "") -> dict:
     """Create a customer. Address is required by RepairShopr."""
     return post("/customers", {
         "firstname": firstname,
@@ -89,8 +87,7 @@ def create_customer(firstname: str, lastname: str, phone: str, address: str, cit
 
 
 @mcp.tool()
-def create_ticket(customer_id: int, subject: str, problem: str,
-                  private_note: str = "", public_note: str = "") -> dict:
+def create_ticket(customer_id: int, subject: str, problem: str, private_note: str = "", public_note: str = "") -> dict:
     """Create a repair ticket. Subject = make/model/serial, problem = the issue."""
     comments = []
     if public_note:
@@ -108,9 +105,7 @@ def create_ticket(customer_id: int, subject: str, problem: str,
 
 @mcp.tool()
 def add_ticket_note(ticket_number: str, note: str, private: bool = True, subject: str = "Update") -> dict:
-    """Add a note to a ticket by its work order number (e.g. 59589).
-    private=True (default) hides it from the customer and sends no email.
-    private=False makes it a public note the customer can see."""
+    """Add a note to a ticket by its work order number (e.g. 59589). private=True (default) hides it from the customer and sends no email. private=False makes it a public note the customer can see."""
     tid = ticket_id_from_number(ticket_number)
     return post(f"/tickets/{tid}/comment", {
         "subject": subject,
@@ -122,8 +117,7 @@ def add_ticket_note(ticket_number: str, note: str, private: bool = True, subject
 
 @mcp.tool()
 def delete_ticket_note(ticket_number: str, comment_id: int) -> dict:
-    """Delete a note from a ticket by work order number and comment id.
-    Only use when Andy explicitly says to delete a specific note."""
+    """Delete a note from a ticket by work order number and comment id. Only use when Andy explicitly says to delete a specific note."""
     tid = ticket_id_from_number(ticket_number)
     r = httpx.delete(f"{BASE}/tickets/{tid}/comments/{comment_id}", headers=HEADERS, timeout=30)
     return {"status": r.status_code, "body": r.text}
@@ -131,8 +125,7 @@ def delete_ticket_note(ticket_number: str, comment_id: int) -> dict:
 
 @mcp.tool()
 def update_ticket_status(ticket_number: str, status: str) -> dict:
-    """Change a ticket's status by work order number. Use the exact status names from
-    RepairShopr, e.g. 'New', 'In Progress', 'Waiting for Parts', 'Customer Reply', 'Resolved'."""
+    """Change a ticket's status by work order number. Use the exact status names from RepairShopr, e.g. 'New', 'In Progress', 'Waiting for Parts', 'Customer Reply', 'Resolved'."""
     tid = ticket_id_from_number(ticket_number)
     return put(f"/tickets/{tid}", {"status": status})
 
@@ -177,6 +170,7 @@ def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dic
         if page >= data.get("meta", {}).get("total_pages", 1):
             break
         page += 1
+
     invoices, page = [], 1
     while True:
         data = get("/invoices", {"since_updated_at": start_date, "page": page})
@@ -193,6 +187,7 @@ def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dic
         if page >= data.get("meta", {}).get("total_pages", 1):
             break
         page += 1
+
     return {
         "invoice_count": len(invoices),
         "total_invoiced": round(sum(i["total"] for i in invoices), 2),
@@ -204,18 +199,13 @@ def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dic
 
 @mcp.tool()
 def search_products(query: str, page: int = 1) -> dict:
-    """Search inventory products by name, SKU, or UPC barcode.
-    Use before create_product to avoid duplicates."""
+    """Search inventory products by name, SKU, or UPC barcode. Use before create_product to avoid duplicates."""
     return get("/products", {"query": query, "page": page})
 
 
 @mcp.tool()
-def create_product(name: str, description: str = "", upc_code: str = "",
-                   price_cost: float = 0, price_retail: float = 0,
-                   quantity: int = 1, physical_location: str = "",
-                   notes: str = "") -> dict:
-    """Add an item to RepairShopr inventory. Usually filled in from a photo
-    of the item or its label: name = make/model, upc_code = barcode number."""
+def create_product(name: str, description: str = "", upc_code: str = "", price_cost: float = 0, price_retail: float = 0, quantity: int = 1, physical_location: str = "", notes: str = "") -> dict:
+    """Add an item to RepairShopr inventory. Usually filled in from a photo of the item or its label: name = make/model, upc_code = barcode number."""
     return post("/products", {
         "name": name,
         "description": description or name,
@@ -230,12 +220,8 @@ def create_product(name: str, description: str = "", upc_code: str = "",
 
 
 @mcp.tool()
-def update_product(product_id: int, name: str = None, description: str = None,
-                   upc_code: str = None, price_cost: float = None,
-                   price_retail: float = None, quantity: int = None,
-                   physical_location: str = None, notes: str = None) -> dict:
-    """Edit an inventory item. Get product_id from search_products.
-    Only the fields you pass are changed; everything else stays the same."""
+def update_product(product_id: int, name: str = None, description: str = None, upc_code: str = None, price_cost: float = None, price_retail: float = None, quantity: int = None, physical_location: str = None, notes: str = None) -> dict:
+    """Edit an inventory item. Get product_id from search_products. Only the fields you pass are changed; everything else stays the same."""
     fields = {
         "name": name,
         "description": description,
@@ -254,25 +240,19 @@ def update_product(product_id: int, name: str = None, description: str = None,
 
 @mcp.tool()
 def delete_product(product_id: int) -> dict:
-    """Delete an inventory item. Get product_id from search_products.
-    Only use when Andy explicitly says to delete a specific item.
-    If RepairShopr won't allow a hard delete, the item is disabled instead."""
+    """Delete an inventory item. Get product_id from search_products. Only use when Andy explicitly says to delete a specific item. If RepairShopr won't allow a hard delete, the item is disabled instead."""
     r = httpx.delete(f"{BASE}/products/{product_id}", headers=HEADERS, timeout=30)
     if r.status_code < 300:
         return {"result": "deleted", "status": r.status_code}
-    d = httpx.put(f"{BASE}/products/{product_id}", headers=HEADERS,
-                  json={"disabled": True}, timeout=30)
+    d = httpx.put(f"{BASE}/products/{product_id}", headers=HEADERS, json={"disabled": True}, timeout=30)
     return {"result": "disabled" if d.status_code < 300 else "failed",
             "delete_status": r.status_code, "disable_status": d.status_code, "body": d.text}
 
 
 @mcp.tool()
 def zero_out_old_inventory(months: int = 6, dry_run: bool = True, max_items: int = 200) -> dict:
-    """Bulk clean-up: set quantity to 0 and put 'DELETED' in front of the name for every
-    product not updated in `months` months. Run with dry_run=True first to see the count.
-    max_items caps how many are changed per run; run again until remaining is 0."""
+    """Bulk clean-up: set quantity to 0 and put 'DELETED' in front of the name for every product not updated in `months` months. Run with dry_run=True first to see the count. max_items caps how many are changed per run; run again until remaining is 0."""
     cutoff = (date.today() - timedelta(days=30 * months)).isoformat()
-
     old, page = [], 1
     while True:
         res = get("/products", {"page": page})
@@ -299,14 +279,13 @@ def zero_out_old_inventory(months: int = 6, dry_run: bool = True, max_items: int
         except Exception as e:
             failed.append({"id": pid, "error": str(e)})
         time.sleep(0.35)
-
     return {"changed": done, "failed": len(failed),
             "remaining": max(0, len(old) - max_items), "errors": failed[:5]}
 
 
 # ---------- Vapi caller greeting (looks up caller before the AI answers) ----------
 
-GREETING = "thank you for calling Tek Media Group, this call may be recorded for quality purposes. To confirm your account, can you please tell me your last name?."
+RECORDED = "thank you for calling Tek Media Group, this call may be recorded for quality purposes."
 
 
 def find_customer_by_phone(number):
@@ -326,19 +305,57 @@ def find_customer_by_phone(number):
     return None
 
 
+def open_tickets(customer_id):
+    try:
+        data = get("/tickets", {"customer_id": customer_id, "status": "Not Closed"})
+    except Exception:
+        return []
+    out = []
+    for t in data.get("tickets", []):
+        out.append({
+            "number": str(t.get("number") or ""),
+            "equipment": (t.get("subject") or "").strip(),
+            "status": t.get("status") or "",
+        })
+    return out
+
+
+def join_items(items):
+    items = [f"your {i}" for i in items]
+    if len(items) <= 2:
+        return " or ".join(items)
+    return ", ".join(items[:-1]) + ", or " + items[-1]
+
+
 @mcp.custom_route(f"/{SECRET}/vapi", methods=["POST"])
 async def vapi_assistant_request(request: Request):
     body = await request.json()
     msg = body.get("message", {})
     number = ((msg.get("call") or {}).get("customer") or {}).get("number", "")
     c = find_customer_by_phone(number) if number else None
+
     if c:
         name = c.get("business_name") or (c.get("firstname") or "").strip()
-        first = f"Hello, {name}, {GREETING}"
-        values = {"customer_name": name, "customer_id": str(c.get("id")), "customer_lastname": c.get("lastname") or ""}
+        tickets = open_tickets(c.get("id"))
+        gear = [t["equipment"] for t in tickets if t["equipment"]]
+        if len(gear) == 1:
+            ask = f"Are you calling about your {gear[0]}?"
+        elif len(gear) > 1:
+            ask = f"Are you calling about one of your repairs, {join_items(gear)}?"
+        else:
+            ask = "Would you like a repair status, or should I put you through to someone?"
+        first = f"Hello {name}, {RECORDED} {ask}"
+        summary = "; ".join(f"WO {t['number']}: {t['equipment']} - {t['status']}" for t in tickets)
+        values = {
+            "customer_name": name,
+            "customer_id": str(c.get("id")),
+            "customer_lastname": c.get("lastname") or "",
+            "open_tickets": summary,
+        }
     else:
         first = "Thank you for calling Tek Media Group, this call may be recorded for quality purposes."
-        values = {"customer_name": "", "customer_id": "", "customer_lastname": ""}
+        values = {"customer_name": "", "customer_id": "", "customer_lastname": "", "open_tickets": ""}
+
     return JSONResponse({
         "assistantId": os.environ["VAPI_ASSISTANT_ID"],
         "assistantOverrides": {
@@ -351,3 +368,5 @@ async def vapi_assistant_request(request: Request):
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
+
+
