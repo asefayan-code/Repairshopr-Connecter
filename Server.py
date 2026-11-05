@@ -11,6 +11,7 @@ API_KEY = os.environ["REPAIRSHOPR_API_KEY"].strip()
 SECRET = os.environ["MCP_SECRET_PATH"]
 BASE = "https://techmediagroup.repairshopr.com/api/v1"
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"}
+QUEUE_NUMBER = "+17473333743"  # RingCentral queue: rings Andy, Jasmine, Mike
 
 mcp = FastMCP("repairshopr", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
 mcp.settings.streamable_http_path = f"/{SECRET}"
@@ -353,8 +354,14 @@ async def vapi_assistant_request(request: Request):
             "open_tickets": summary,
         }
     else:
-        first = "Thank you for calling Tek Media Group, this call may be recorded for quality purposes."
-        values = {"customer_name": "", "customer_id": "", "customer_lastname": "", "open_tickets": ""}
+        # New / unrecognized caller: skip the AI, say the greeting, ring all three phones
+        return JSONResponse({
+            "destination": {
+                "type": "number",
+                "number": QUEUE_NUMBER,
+                "message": "Thank you for calling Tek Media Group, this call may be recorded for quality purposes. Please hold while I connect you.",
+            },
+        })
 
     return JSONResponse({
         "assistantId": os.environ["VAPI_ASSISTANT_ID"],
@@ -368,8 +375,4 @@ async def vapi_assistant_request(request: Request):
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
-
-
-
-
 
