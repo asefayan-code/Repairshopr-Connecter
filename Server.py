@@ -354,12 +354,28 @@ async def vapi_assistant_request(request: Request):
             "open_tickets": summary,
         }
     else:
-        # New / unrecognized caller: skip the AI, say the greeting, ring all three phones
+        # New caller: say the greeting, then transfer straight to the three phones
         return JSONResponse({
-            "destination": {
-                "type": "number",
-                "number": QUEUE_NUMBER,
-                "message": "Thank you for calling Tek Media Group, this call may be recorded for quality purposes. Please hold while I connect you.",
+            "assistant": {
+                "name": "New caller greeter",
+                "firstMessageMode": "assistant-speaks-first-with-model-generated-message",
+                "model": {
+                    "provider": "anthropic",
+                    "model": "claude-haiku-4-5-20251001",
+                    "messages": [{
+                        "role": "system",
+                        "content": "Do not speak. Immediately call the transferCall tool to the queue number. Nothing else.",
+                    }],
+                    "tools": [{
+                        "type": "transferCall",
+                        "destinations": [{"type": "number", "number": QUEUE_NUMBER}],
+                        "messages": [{
+                            "type": "request-start",
+                            "content": "Thank you for calling Tek Media Group, this call may be recorded for quality purposes. Please hold while I connect you.",
+                        }],
+                    }],
+                },
+                "voice": {"provider": "vapi", "voiceId": "Elliot"},
             },
         })
 
@@ -375,4 +391,3 @@ async def vapi_assistant_request(request: Request):
 
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")
-
