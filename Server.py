@@ -132,6 +132,29 @@ def update_ticket_status(ticket_number: str, status: str) -> dict:
 
 
 @mcp.tool()
+def get_ticket_comments(ticket_number: str) -> dict:
+    """Show all comments on a ticket by work order number, newest first, with dates. Use to check for new customer activity on a ticket."""
+    tid = ticket_id_from_number(ticket_number)
+    t = get(f"/tickets/{tid}").get("ticket", {})
+    comments = sorted(t.get("comments", []), key=lambda c: c.get("created_at") or "", reverse=True)
+    return {
+        "ticket": ticket_number,
+        "status": t.get("status"),
+        "comments": [
+            {
+                "id": c.get("id"),
+                "date": (c.get("created_at") or "")[:10],
+                "from": c.get("tech") or "",
+                "subject": c.get("subject") or "",
+                "hidden": c.get("hidden"),
+                "body": (c.get("body") or "")[:500],
+            }
+            for c in comments
+        ],
+    }
+
+
+@mcp.tool()
 def list_invoices(since_date: str = "", unpaid_only: bool = False, page: int = 1) -> dict:
     """List invoices. since_date format YYYY-MM-DD. Shows totals, paid status, ticket link."""
     params = {"page": page}
@@ -200,194 +223,4 @@ def technician_revenue(user_id: int, start_date: str, end_date: str = "") -> dic
 
 @mcp.tool()
 def search_products(query: str, page: int = 1) -> dict:
-    """Search inventory products by name, SKU, or UPC barcode. Use before create_product to avoid duplicates."""
-    return get("/products", {"query": query, "page": page})
-
-
-@mcp.tool()
-def create_product(name: str, description: str = "", upc_code: str = "", price_cost: float = 0, price_retail: float = 0, quantity: int = 1, physical_location: str = "", notes: str = "") -> dict:
-    """Add an item to RepairShopr inventory. Usually filled in from a photo of the item or its label: name = make/model, upc_code = barcode number."""
-    return post("/products", {
-        "name": name,
-        "description": description or name,
-        "upc_code": upc_code,
-        "price_cost": price_cost,
-        "price_retail": price_retail,
-        "maintain_stock": True,
-        "quantity": quantity,
-        "physical_location": physical_location,
-        "notes": notes,
-    })
-
-
-@mcp.tool()
-def update_product(product_id: int, name: str = None, description: str = None, upc_code: str = None, price_cost: float = None, price_retail: float = None, quantity: int = None, physical_location: str = None, notes: str = None) -> dict:
-    """Edit an inventory item. Get product_id from search_products. Only the fields you pass are changed; everything else stays the same."""
-    fields = {
-        "name": name,
-        "description": description,
-        "upc_code": upc_code,
-        "price_cost": price_cost,
-        "price_retail": price_retail,
-        "quantity": quantity,
-        "physical_location": physical_location,
-        "notes": notes,
-    }
-    data = {k: v for k, v in fields.items() if v is not None}
-    if not data:
-        raise ValueError("Nothing to update")
-    return put(f"/products/{product_id}", data)
-
-
-@mcp.tool()
-def delete_product(product_id: int) -> dict:
-    """Delete an inventory item. Get product_id from search_products. Only use when Andy explicitly says to delete a specific item. If RepairShopr won't allow a hard delete, the item is disabled instead."""
-    r = httpx.delete(f"{BASE}/products/{product_id}", headers=HEADERS, timeout=30)
-    if r.status_code < 300:
-        return {"result": "deleted", "status": r.status_code}
-    d = httpx.put(f"{BASE}/products/{product_id}", headers=HEADERS, json={"disabled": True}, timeout=30)
-    return {"result": "disabled" if d.status_code < 300 else "failed",
-            "delete_status": r.status_code, "disable_status": d.status_code, "body": d.text}
-
-
-@mcp.tool()
-def zero_out_old_inventory(months: int = 6, dry_run: bool = True, max_items: int = 200) -> dict:
-    """Bulk clean-up: set quantity to 0 and put 'DELETED' in front of the name for every product not updated in `months` months. Run with dry_run=True first to see the count. max_items caps how many are changed per run; run again until remaining is 0."""
-    cutoff = (date.today() - timedelta(days=30 * months)).isoformat()
-    old, page = [], 1
-    while True:
-        res = get("/products", {"page": page})
-        for p in res.get("products", []):
-            name = (p.get("name") or "").strip()
-            if name.startswith("DELETED"):
-                continue
-            updated = (p.get("since_updated_at") or "")[:10]
-            if updated and updated < cutoff:
-                old.append((p["id"], name))
-        if page >= res.get("meta", {}).get("total_pages", 1):
-            break
-        page += 1
-        time.sleep(0.35)  # stay under RepairShopr's rate limit
-
-    if dry_run:
-        return {"cutoff": cutoff, "would_change": len(old), "sample": [n for _, n in old[:10]]}
-
-    done, failed = 0, []
-    for pid, name in old[:max_items]:
-        try:
-            put(f"/products/{pid}", {"quantity": 0, "name": f"DELETED {name}"})
-            done += 1
-        except Exception as e:
-            failed.append({"id": pid, "error": str(e)})
-        time.sleep(0.35)
-    return {"changed": done, "failed": len(failed),
-            "remaining": max(0, len(old) - max_items), "errors": failed[:5]}
-
-
-# ---------- Vapi caller greeting (looks up caller before the AI answers) ----------
-
-RECORDED = "thank you for calling Tek Media Group, this call may be recorded for quality purposes."
-
-
-def find_customer_by_phone(number):
-    digits = "".join(ch for ch in number if ch.isdigit())[-10:]
-    if len(digits) != 10:
-        return None
-    tries = (digits, f"{digits[:3]}-{digits[3:6]}-{digits[6:]}", f"({digits[:3]}) {digits[3:6]}-{digits[6:]}")
-    for q in tries:
-        try:
-            data = get("/customers", {"query": q})
-        except Exception:
-            continue
-        for c in data.get("customers", []):
-            for p in (c.get("phone") or "", c.get("mobile") or ""):
-                if "".join(ch for ch in p if ch.isdigit())[-10:] == digits:
-                    return c
-    return None
-
-
-def open_tickets(customer_id):
-    try:
-        data = get("/tickets", {"customer_id": customer_id, "status": "Not Closed"})
-    except Exception:
-        return []
-    out = []
-    for t in data.get("tickets", []):
-        out.append({
-            "number": str(t.get("number") or ""),
-            "equipment": (t.get("subject") or "").split(" SN")[0].strip(" ,-"),
-            "status": t.get("status") or "",
-        })
-    return out
-
-
-def join_items(items):
-    items = [f"your {i}" for i in items]
-    if len(items) <= 2:
-        return " or ".join(items)
-    return ", ".join(items[:-1]) + ", or " + items[-1]
-
-
-@mcp.custom_route(f"/{SECRET}/vapi", methods=["POST"])
-async def vapi_assistant_request(request: Request):
-    body = await request.json()
-    msg = body.get("message", {})
-    number = ((msg.get("call") or {}).get("customer") or {}).get("number", "")
-    c = find_customer_by_phone(number) if number else None
-
-    if c:
-        name = c.get("business_name") or (c.get("firstname") or "").strip()
-        tickets = open_tickets(c.get("id"))
-        gear = [t["equipment"] for t in tickets if t["equipment"]][:3]
-        if len(gear) == 1:
-            ask = f"Are you calling about your {gear[0]}?"
-        elif len(gear) > 1:
-            ask = f"Are you calling about one of your repairs, {join_items(gear)}?"
-        else:
-            ask = "Would you like a repair status, or should I put you through to someone?"
-        first = f"Hello {name}, {RECORDED} {ask}"
-        summary = "; ".join(f"WO {t['number']}: {t['equipment']} - {t['status']}" for t in tickets)
-        values = {
-            "customer_name": name,
-            "customer_id": str(c.get("id")),
-            "customer_lastname": c.get("lastname") or "",
-            "open_tickets": summary,
-        }
-    else:
-        # New caller: say the greeting, then transfer straight to the three phones
-        return JSONResponse({
-            "assistant": {
-                "name": "New caller greeter",
-                "firstMessageMode": "assistant-speaks-first-with-model-generated-message",
-                "model": {
-                    "provider": "anthropic",
-                    "model": "claude-haiku-4-5-20251001",
-                    "messages": [{
-                        "role": "system",
-                        "content": "Do not speak. Immediately call the transferCall tool to the queue number. Nothing else.",
-                    }],
-                    "tools": [{
-                        "type": "transferCall",
-                        "destinations": [{"type": "number", "number": QUEUE_NUMBER}],
-                        "messages": [{
-                            "type": "request-start",
-                            "content": "Thank you for calling Tek Media Group, this call may be recorded for quality purposes. Please hold while I connect you.",
-                        }],
-                    }],
-                },
-                "voice": {"provider": "vapi", "voiceId": "Elliot"},
-            },
-        })
-
-    return JSONResponse({
-        "assistantId": os.environ["VAPI_ASSISTANT_ID"],
-        "assistantOverrides": {
-            "firstMessage": first,
-            "firstMessageMode": "assistant-speaks-first",
-            "variableValues": values,
-        },
-    })
-
-
-if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    """Search inventory products by name, SKU, or UPC barcode.
